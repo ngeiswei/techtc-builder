@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 import os
-from bidict import bidict
 from random import random, choice
 from lxml import etree
 from optparse import OptionParser
@@ -40,52 +39,57 @@ def r():
     return "{http://www.w3.org/TR/RDF/}"
 
 
-def links(cont_root, cat):
+def links(contentFileName, cat):
     '''return the list of links of category cat.'''
-    for t in cont_root.iter(ns()+"Topic"):
+    cf = open(contentFileName)
+    for _,t in etree.iterparse(cf, tag = ns()+"Topic"):
         if cat == t.attrib[r()+"id"]:
-            return [n.attrib[r()+"resource"] for n in t.iter() if "link" in n.tag]
+            l = [n.attrib[r()+"resource"] for n in t.iter() if "link" in n.tag]
+            t.clear()
+            return l
+        t.clear()
+    cf.close()
     return None
 
 clinks = Cache(links)
 
-def choiceLinks(cont_root, cat):
+def choiceLinks(contentFileName, cat):
     '''Choose randomly a link belonging to cat. If no link exist it
     returns None'''
-    l = clinks((cont_root, cat))
+    l = clinks((contentFileName, cat))
     if l:
         return choice(l)
     else:
         return None
 
 
-def collectLinks(cont_root, cats, n = None):
+def collectLinks(contentFileName, cats, n = None):
     '''given a set of categories collect a maximum of n links over the
     categories cats.'''
     l = []
     for cat in cats:
-        l += links(cont_root, cat)
+        l += clinks((contentFileName, cat))
         if n and len(l) >= n:
             return l[:n]
     return l
 
 
-def collectLinksBFS(const_root, struct_root, cat, n):
+def collectLinksBFS(contentFileName, structureFileName, cat, n):
     '''collects up to n links in BFS order from category cat.'''
     cats = [cat]
     l = []
     s = len(l)
     while s < n and len(cats) > 0:
-        l += collectLinks(const_root, cats, n - s)
+        l += collectLinks(contentFileName, cats, n - s)
         s = len(l)
         if s < n:
-            cats = sum([subcategories(struct_root, cat) for cat in cats],[])
+            cats = sum([subcategories(structureFileName, cat) for cat in cats],[])
         else:
             return l[:n]
     return l
 
 
-def choiceCollectLinks(cont_root, struct_root, cat, n, p, m = -1):
+def choiceCollectLinks(contentFileName, structureFileName, cat, n, p, m = -1):
     '''randomly choose a set of links belonging to a category (or its
     subcategories). If after m attempts the number of links n hasn't
     been reached (considering that duplicated links are ignored) then
@@ -94,9 +98,9 @@ def choiceCollectLinks(cont_root, struct_root, cat, n, p, m = -1):
     probability to dig deeper in the hierarchy to get the links.'''
     res = set()
     while len(res) < n and m != 0:
-        scat = choiceCategory(struct_root, cat, p)
+        scat = choiceCategory(structureFileName, cat, p)
         if scat:
-            link = choiceLinks(cont_root, scat)
+            link = choiceLinks(contentFileName, scat)
             if link:
                 if link not in res:
                     res.add(link)
@@ -104,27 +108,32 @@ def choiceCollectLinks(cont_root, struct_root, cat, n, p, m = -1):
     return res
 
 
-def subcategories(struct_root, cat):
+def subcategories(structureFileName, cat):
     '''return the list of direct subcategories of cat. If there isn't
     such cat then it returns the empty list.'''
-    for t in struct_root.iter(ns()+"Topic"):
+    sf = open(structureFileName)
+    for _,t in etree.iterparse(sf, tag = ns()+"Topic"):
         if cat == t.attrib[r()+"id"]:
-            return [n.attrib[r()+"resource"] for n in t.iter() if "narrow" in n.tag]
+            l = [n.attrib[r()+"resource"] for n in t.iter() if "narrow" in n.tag]
+            t.clear()
+            return l
+        t.clear()
+    sf.close()
     return []
 
 csubcategories = Cache(subcategories)
 
-def choiceSubcategory(struct_root, cat, p):
+def choiceSubcategory(structureFileName, cat, p):
     '''given a category choose randomly a subcategory from it. p is
     the probability to choose a subcategory which is not a direct
     child of cat. struct_root is the root element of the
     structure.rdf.u8 file.'''
     
-    l = csubcategories((struct_root, cat))
+    l = csubcategories((structureFileName, cat))
     if l:
         sc = choice(l)
         if random() <= p:
-            scr = choiceSubcategory(struct_root, sc, p)
+            scr = choiceSubcategory(structureFileName, sc, p)
             if scr:
                 sc = scr
         return sc
@@ -132,19 +141,19 @@ def choiceSubcategory(struct_root, cat, p):
         return None
 
 
-def choiceCategory(struct_root, cat, p):
+def choiceCategory(structureFileName, cat, p):
     '''like choiceSubcategory but consider cat as a result too'''
     if random() <= p:
-        return choiceSubcategory(struct_root, cat, p)
+        return choiceSubcategory(structureFileName, cat, p)
     else:
         return cat
 
 
-def choiceSubcategoriesPairs(struct_root, options):
+def choiceSubcategoriesPairs(structureFileName, options):
     '''return a set of pairs of categories randomly choosen'''
     
-    pf = lambda:choiceSubcategory(struct_root, options.posCR, options.rp)
-    nf = lambda:choiceSubcategory(struct_root, options.negCR, options.rp)
+    pf = lambda:choiceSubcategory(structureFileName, options.posCR, options.rp)
+    nf = lambda:choiceSubcategory(structureFileName, options.negCR, options.rp)
 
     res = set()
     while len(res) < options.s:
@@ -257,7 +266,7 @@ def downloadLinks(topic_id, ls, options):
         fillTechtcFormatDocument(options, topic_id, i)
         i += 1
 
-def dictCatLinks(cont_root, struct_root, spl, options):
+def dictCatLinks(contentFileName, structureFileName, spl, options):
     '''Create a dictionary mapping each subcategory to a set of
     links. spl is a set of pairs of categories gotten from
     choiceSubcategoriesPairs'''
@@ -265,9 +274,9 @@ def dictCatLinks(cont_root, struct_root, spl, options):
     res = {}
     
     if options.d:               # deterministic link selection
-        f = lambda x: collectLinksBFS(cont_root, struct_root, x, options.l)
+        f = lambda x: collectLinksBFS(contentFileName, structureFileName, x, options.l)
     else:                       # random link selection
-        f = lambda x: choiceCollectLinks(cont_root, struct_root, x, options.l, options.rp, options.l*100)
+        f = lambda x: choiceCollectLinks(contentFileName, structureFileName, x, options.l, options.rp, options.l*100)
 
     for psc,nsc in spl:
         print "Select",options.l,"links of positive subcategory",psc
@@ -279,15 +288,19 @@ def dictCatLinks(cont_root, struct_root, spl, options):
     return res
 
 
-def bidictTopicId(cont_root, cats):
-    '''Return a bidict mapping categories to ids. cats is supposed to
+def dictTopicId(contentFileName, cats):
+    '''Return a dict mapping categories to ids. cats is supposed to
     be a set so there is no redundant element'''
-    bd = bidict()
-    for t in cont_root.iter(ns()+"Topic"):
+    d = {}
+    cf = open(contentFileName)
+    for _,t in etree.iterparse(cf, tag = ns()+"Topic"):
         topic = t.attrib[r()+"id"]
         if topic in cats:
-            bd[topic] = t.findtext(ns()+"catid")
-    return bd
+            d[topic] = t.findtext(ns()+"catid")
+            print "d =",d
+        t.clear()
+    cf.close()
+    return d
 
 
 def dataset_dir(options, bd, p, n):
@@ -314,34 +327,23 @@ def organizeDocuments(spl, bd, options):
 
 
 def build_techtc(contentFileName, structureFileName, options):
-    structureFile = open(structureFileName)
-    contentFile = open(contentFileName)
-
-    print "Parse", structureFileName
-    st = etree.parse(structureFile)
-    struct_root = st.getroot()
-    
-    print "Parse", contentFileName
-    ct = etree.parse(contentFile)
-    cont_root = ct.getroot()
-
     print "Choose", options.s, "pairs of subcategories of", options.posCR, "and", options.negCR, "respectively"
-    spl = choiceSubcategoriesPairs(struct_root, options)
+    spl = choiceSubcategoriesPairs(structureFileName, options)
     
     print "Associate the id of each subcategory"
     cats = set.union(*[set(p) for p in spl])
-    db = bidictTopicId(cont_root, cats)
-    print db
+    d = dictTopicId(contentFileName, cats)
+    print d
     
     print "For each subcategory select", options.l, "links"
-    dcl = dictCatLinks(cont_root, struct_root, spl, options)
+    dcl = dictCatLinks(contentFileName, structureFileName, spl, options)
     print "Total number of positive and negative subcategories =", len(dcl)
 
     print "Create documents in techtc format for all subcategories"
-    createDocuments(dcl, db, options)
+    createDocuments(dcl, d, options)
 
     print "Organize documents according to the list of pairs of subcategories"
-    organizeDocuments(spl, db, options)
+    organizeDocuments(spl, d, options)
 
 
 def main():
