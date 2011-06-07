@@ -1,17 +1,20 @@
 #!/usr/bin/env python
 import os
+import sys
 from random import random, choice
 from lxml import etree
 from optparse import OptionParser
 
-cache_size = 0
+# maximum cache size
+cache_size = sys.maxint
 
 class Cache:
-    '''Simple cache without replacement'''
-    def __init__(self, f, size = 1000):
+    '''Simple cache without replacement. f is the function to cache. s
+    is the size of the cache'''
+    def __init__(self, f, s):
         self._f = f
         self._d = {}
-        self._s = size
+        self._s = s
         self._calls = 0
         self._failures = 0
 
