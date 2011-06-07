@@ -4,18 +4,20 @@ from random import random, choice
 from lxml import etree
 from optparse import OptionParser
 
+cache_size = 0
 
 class Cache:
     '''Simple cache without replacement'''
-    def __init__(self, f):
+    def __init__(self, f, size = 1000):
         self._f = f
         self._d = {}
+        self._s = size
         self._calls = 0
         self._failures = 0
 
     def __call__(self, x):
         self._calls += 1
-        if x not in self._d:
+        if x not in self._d and len(self._d) < self._s :
             self._d[x] = self._f(*x)
             self._failures += 1
         return self._d[x]
@@ -51,7 +53,7 @@ def links(contentFileName, cat):
     cf.close()
     return None
 
-clinks = Cache(links)
+clinks = Cache(links, cache_size)
 
 def choiceLinks(contentFileName, cat):
     '''Choose randomly a link belonging to cat. If no link exist it
@@ -121,7 +123,7 @@ def subcategories(structureFileName, cat):
     sf.close()
     return []
 
-csubcategories = Cache(subcategories)
+csubcategories = Cache(subcategories, cache_size)
 
 def choiceSubcategory(structureFileName, cat, p):
     '''given a category choose randomly a subcategory from it. p is
@@ -199,6 +201,7 @@ def html2text_cmd(topic_id, doc_index, options):
     cmd += " -o \"" + doc_path_txt(options, topic_id, doc_index) + "\""
     cmd += " " + doc_path_html(options, topic_id, doc_index)
     return cmd
+
 
 def createDocuments(dcl, bd, options):
     '''Create documents in techtc format given dcl, a dictionary
