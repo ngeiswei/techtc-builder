@@ -1,25 +1,38 @@
 #!/usr/bin/env python
+import os
+from bidict import bidict
 from random import random, choice
 from lxml import etree
 from optparse import OptionParser
 
 
-class cache:
+class Cache:
+    '''Simple cache without replacement'''
     def __init__(self, f):
         self._f = f
         self._d = {}
+        self._calls = 0
+        self._failures = 0
 
     def __call__(self, x):
-        if x in self._d:
-            return self._d[x]
-        else:
-            y = self._f(x)
-            self._d[x] = y
-            return y
+        self._calls += 1
+        if x not in self._d:
+            self._d[x] = self._f(*x)
+            self._failures += 1
+        return self._d[x]
+
+    def get_failures(self):
+        return self._failures
+
+    def get_calls(self):
+        return self._calls
+
+    def get_hits(self):
+        return self._calls - self._failures
 
 
-# contain the namespace of dmoz xml file (kinda hacky)
 def ns():
+    '''contain the namespace of dmoz xml file (kinda hacky)'''
     return "{http://dmoz.org/rdf/}"
 
 
@@ -27,27 +40,38 @@ def r():
     return "{http://www.w3.org/TR/RDF/}"
 
 
-# return the list of links of category cat.
 def links(cont_root, cat):
+    '''return the list of links of category cat.'''
     for t in cont_root.iter(ns()+"Topic"):
         if cat == t.attrib[r()+"id"]:
             return [n.attrib[r()+"resource"] for n in t.iter() if "link" in n.tag]
     return None
 
+clinks = Cache(links)
 
-# given a category (like Top/Arts/Architecture) collect a maximum of n
-# links over the categories cats.
-def collectLinks(cont_root, cats, n):
+def choiceLinks(cont_root, cat):
+    '''Choose randomly a link belonging to cat. If no link exist it
+    returns None'''
+    l = clinks((cont_root, cat))
+    if l:
+        return choice(l)
+    else:
+        return None
+
+
+def collectLinks(cont_root, cats, n = None):
+    '''given a set of categories collect a maximum of n links over the
+    categories cats.'''
     l = []
     for cat in cats:
         l += links(cont_root, cat)
-        if len(l) >= n:
+        if n and len(l) >= n:
             return l[:n]
     return l
 
 
-# collects up to n links in BFS order from category cat
 def collectLinksBFS(const_root, struct_root, cat, n):
+    '''collects up to n links in BFS order from category cat.'''
     cats = [cat]
     l = []
     s = len(l)
@@ -60,24 +84,47 @@ def collectLinksBFS(const_root, struct_root, cat, n):
             return l[:n]
     return l
 
-# return the list of direct subcategories of cat. If there isn't such
-# cat then it returns the empty list.
+
+def choiceCollectLinks(cont_root, struct_root, cat, n, p, m = -1):
+    '''randomly choose a set of links belonging to a category (or its
+    subcategories). If after m attempts the number of links n hasn't
+    been reached (considering that duplicated links are ignored) then
+    it return None. If m is negative then there is no limit in the
+    number of attempts (which can lead to infinit loop). p is the
+    probability to dig deeper in the hierarchy to get the links.'''
+    res = set()
+    while len(res) < n and m != 0:
+        scat = choiceCategory(struct_root, cat, p)
+        if scat:
+            link = choiceLinks(cont_root, scat)
+            if link:
+                if link not in res:
+                    res.add(link)
+        m -= 1
+    return res
+
+
 def subcategories(struct_root, cat):
+    '''return the list of direct subcategories of cat. If there isn't
+    such cat then it returns the empty list.'''
     for t in struct_root.iter(ns()+"Topic"):
         if cat == t.attrib[r()+"id"]:
             return [n.attrib[r()+"resource"] for n in t.iter() if "narrow" in n.tag]
     return []
 
+csubcategories = Cache(subcategories)
 
-# given a category choose randomly a subcategory from it. p is the
-# probability to choose a subcategory which is not a direct child of
-# cat. struct_root is the root element of the structure.rdf.u8 file.
-def chooseSubcategory(struct_root, cat, p):
-    l = subcategories(struct_root, cat)
+def choiceSubcategory(struct_root, cat, p):
+    '''given a category choose randomly a subcategory from it. p is
+    the probability to choose a subcategory which is not a direct
+    child of cat. struct_root is the root element of the
+    structure.rdf.u8 file.'''
+    
+    l = csubcategories((struct_root, cat))
     if l:
         sc = choice(l)
         if random() <= p:
-            scr = chooseSubcategory(struct_root, sc, p)
+            scr = choiceSubcategory(struct_root, sc, p)
             if scr:
                 sc = scr
         return sc
@@ -85,30 +132,216 @@ def chooseSubcategory(struct_root, cat, p):
         return None
 
 
-# return a list of pairs of categories
-def chooseSubcategoriesPairs(structureFileName, options):
-    structureFile = open(structureFileName)
+def choiceCategory(struct_root, cat, p):
+    '''like choiceSubcategory but consider cat as a result too'''
+    if random() <= p:
+        return choiceSubcategory(struct_root, cat, p)
+    else:
+        return cat
 
-    print "Parse", structureFileName
-    st = etree.parse(structureFile)
 
-    pf = lambda:chooseSubcategory(st.getroot(), options.posCR, options.rp)
-    nf = lambda:chooseSubcategory(st.getroot(), options.negCR, options.rp)
+def choiceSubcategoriesPairs(struct_root, options):
+    '''return a set of pairs of categories randomly choosen'''
+    
+    pf = lambda:choiceSubcategory(struct_root, options.posCR, options.rp)
+    nf = lambda:choiceSubcategory(struct_root, options.negCR, options.rp)
 
-    print "Choose subcategories"
     res = set()
     while len(res) < options.s:
         res.add((pf(),nf()))
     return res
 
 
-def build_techtc(contentFileName, structureFileName, options):
-    sp=chooseSubcategoriesPairs(structureFileName, options)
-    print "sp =", sp
+def topic_dir(options, topic_id):
+    return options.o + "/" + topic_id
+
+def topic_path(options, topic_id):
+    return topic_dir(options, topic_id) + "/topic.txt"
+
+def doc_path(options, topic_id, doc_index):
+    return topic_dir(options, topic_id) + "/" + "doc_" + str(doc_index)
+
+def doc_path_html(options, topic_id, doc_index):
+    return doc_path(options, topic_id, doc_index) + ".html"
+
+def doc_path_txt(options, topic_id, doc_index):
+    return doc_path(options, topic_id, doc_index) + ".txt"
+
+def techtc_doc_path(options, topic_id):
+    return topic_dir(options, topic_id) + "/techtc_doc.txt"
+
+def wget_cmd(topic_id, doc_index, link, options):
+    cmd = "wget"
+    cmd += " -r"
+    cmd += " -np"
+    cmd += " -linf"
+    cmd += " -Rgif,jpeg,jpg,png,swf,css,rss,ico,js"
+    cmd += " -Q" + str(options.Q)
+    cmd += " " + link
+    cmd += " -O \"" + doc_path_html(options, topic_id, doc_index) + "\""
+    cmd += " -q"
+    return cmd
+
+
+def html2text_cmd(topic_id, doc_index, options):
+    cmd = "html2text"
+    cmd += " -ascii"
+    cmd += " -style pretty"
+    cmd += " -o \"" + doc_path_txt(options, topic_id, doc_index) + "\""
+    cmd += " " + doc_path_html(options, topic_id, doc_index)
+    return cmd
+
+def createDocuments(dcl, bd, options):
+    '''Create documents in techtc format given dcl, a dictionary
+    mapping all subcategories and a set of links (web pages), and bd,
+    a bidict associating topics and their ids'''
+
+    # create directory to put the documents
+    print "Create techtc directory"
+    mkdir_cmd = "mkdir " + options.o
+    print mkdir_cmd
+    os.system(mkdir_cmd)
+
+    for c in dcl:
+        print "Download all links of",c
+        print "Create topic directory"
+        mkdir_cmd = "mkdir " + topic_dir(options, bd[c])
+        print mkdir_cmd
+        os.system(mkdir_cmd)
+        print "Added file containing the topic"
+        topic_cmd = "echo " + c + " > " + topic_path(options, bd[c])
+        print topic_cmd
+        os.system(topic_cmd)
+        print "Start downloading links"
+        downloadLinks(bd[c], dcl[c], options)
+
+def fillTechtcFormatDocument(options, topic_id, doc_index):
+    print "Fill document in techtc format"
+    tdc = techtc_doc_path(options, topic_id)
+    rtdc = " >> " + "\"" + tdc + "\""
+    cmd = "echo \"<dmoz_doc>\"" + rtdc
+    print cmd
+    os.system(cmd)
+    cmd = "echo id=" + str(doc_index) + rtdc
+    print cmd
+    os.system(cmd)
+    cmd = "echo \"<dmoz_subdoc>\"" + rtdc
+    print cmd
+    os.system(cmd)
+    cmd = "more " + doc_path_txt(options, topic_id, doc_index) + rtdc
+    print cmd
+    os.system(cmd)
+    cmd = "echo \"</dmoz_subdoc>\"" + rtdc
+    print cmd
+    os.system(cmd)
+    cmd = "echo \"</dmoz_doc>\"" + rtdc
+    print cmd
+    os.system(cmd)
+        
+def downloadLinks(topic_id, ls, options):
+    '''Download links ls and place the content of each link in a file
+    under topic_id directory. The files are indexed from 0 to
+    len(ls)-1'''
+
+    i = 0
+    for l in ls:
+        # download links
+        cmd = wget_cmd(topic_id, i, l, options)
+        print cmd
+        os.system(cmd)
+        # convert them into text
+        cmd = html2text_cmd(topic_id, i, options)
+        print cmd
+        os.system(cmd)
+        # fill document in techtc format for that topic
+        fillTechtcFormatDocument(options, topic_id, i)
+        i += 1
+
+def dictCatLinks(cont_root, struct_root, spl, options):
+    '''Create a dictionary mapping each subcategory to a set of
+    links. spl is a set of pairs of categories gotten from
+    choiceSubcategoriesPairs'''
+
+    res = {}
     
-    # contentFile = open(contentFileName)
-    # print "Parse", contentFileName
-    # cTree = etree.parse(contentFile)
+    if options.d:               # deterministic link selection
+        f = lambda x: collectLinksBFS(cont_root, struct_root, x, options.l)
+    else:                       # random link selection
+        f = lambda x: choiceCollectLinks(cont_root, struct_root, x, options.l, options.rp, options.l*100)
+
+    for psc,nsc in spl:
+        print "Select",options.l,"links of positive subcategory",psc
+        if psc not in res:
+            res[psc] = f(psc)
+        print "Select",options.l,"links of negative subcategory",nsc
+        if nsc not in res:
+            res[nsc] = f(nsc)
+    return res
+
+
+def bidictTopicId(cont_root, cats):
+    '''Return a bidict mapping categories to ids. cats is supposed to
+    be a set so there is no redundant element'''
+    bd = bidict()
+    for t in cont_root.iter(ns()+"Topic"):
+        topic = t.attrib[r()+"id"]
+        if topic in cats:
+            bd[topic] = t.findtext(ns()+"catid")
+    return bd
+
+
+def dataset_dir(options, bd, p, n):
+    return options.o + "/" + "Exp_" + bd[p] + "_" + bd[n]
+
+
+def organizeDocuments(spl, bd, options):
+    for p,n in spl:
+        dsd = dataset_dir(options, bd, p, n)
+        dsd_p = dsd + "/all_pos.txt"
+        dsd_n = dsd + "/all_neg.txt"
+        print "Create dataset directory for " + p + "vs" + n
+        cmd = "mkdir " + dsd
+        print cmd
+        os.system(cmd)
+        print "Move the positve documents in it"
+        cmd = "mv " + techtc_doc_path(options, bd[p]) + " " + dsd_p
+        print cmd
+        os.system(cmd)
+        print "Move the negative documents in it"
+        cmd = "mv " + techtc_doc_path(options, bd[n]) + " " + dsd_n
+        print cmd
+        os.system(cmd)
+
+
+def build_techtc(contentFileName, structureFileName, options):
+    structureFile = open(structureFileName)
+    contentFile = open(contentFileName)
+
+    print "Parse", structureFileName
+    st = etree.parse(structureFile)
+    struct_root = st.getroot()
+    
+    print "Parse", contentFileName
+    ct = etree.parse(contentFile)
+    cont_root = ct.getroot()
+
+    print "Choose", options.s, "pairs of subcategories of", options.posCR, "and", options.negCR, "respectively"
+    spl = choiceSubcategoriesPairs(struct_root, options)
+    
+    print "Associate the id of each subcategory"
+    cats = set.union(*[set(p) for p in spl])
+    db = bidictTopicId(cont_root, cats)
+    print db
+    
+    print "For each subcategory select", options.l, "links"
+    dcl = dictCatLinks(cont_root, struct_root, spl, options)
+    print "Total number of positive and negative subcategories =", len(dcl)
+
+    print "Create documents in techtc format for all subcategories"
+    createDocuments(dcl, db, options)
+
+    print "Organize documents according to the list of pairs of subcategories"
+    organizeDocuments(spl, db, options)
 
 
 def main():
@@ -126,6 +359,18 @@ def main():
     parser.add_option("-s", "--techtc-size", type="int",
                       dest="s", default=300,
                       help="Size of the techtc generated. [default: %default]")
+    parser.add_option("-l", "--documents-number", type="int",
+                      dest="l", default=200,
+                      help="Number of documents per dataset. [default: %default]")
+    parser.add_option("-d", "--deterministic-link-selection",
+                      action="store_true", dest="d",
+                      help="Select the links within a subcategory in BFS order (faster). Otherwise it is selected ramdonly (much slower).")
+    parser.add_option("-o", "--output-directory",
+                      dest="o", default="__default__",
+                      help="Directory where to download the web pages. [default: %default]")
+    parser.add_option("-Q", "--quota", type="int",
+                      dest="Q", default=100000,
+                      help="Maximum number of bytes to retreive per link. [default: %default]")
     (options, args) = parser.parse_args()
 
     if len(args) != 2:
@@ -134,7 +379,16 @@ def main():
     contentFileName=args[0]
     structureFileName=args[1]
 
+    if options.o == "__default__":
+        options.o = "techtc_"+str(options.s)
+    
     build_techtc(contentFileName, structureFileName, options)
+
+    print "Cache failures for links =", clinks.get_failures()
+    print "Cache hits for links =", clinks.get_hits()
+
+    print "Cache failures for subcategories =", csubcategories.get_failures()
+    print "Cache hits for subcategories =", csubcategories.get_hits()
 
 if __name__ == "__main__":
     main()
