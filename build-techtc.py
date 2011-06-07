@@ -17,8 +17,11 @@ class Cache:
 
     def __call__(self, x):
         self._calls += 1
-        if x not in self._d and len(self._d) < self._s :
-            self._d[x] = self._f(*x)
+        if x not in self._d:
+            if len(self._d) < self._s:
+                self._d[x] = self._f(*x)
+            else:
+                return self._f(*x)
             self._failures += 1
         return self._d[x]
 
