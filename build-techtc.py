@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import os
 import sys
+import pickle
 from random import random, choice
 from lxml import etree
 from optparse import OptionParser
@@ -62,7 +63,7 @@ def links(contentFileName, cat):
 clinks = Cache(links, cache_size)
 
 def choiceLinks(contentFileName, cat):
-    '''Choose randomly a link belonging to cat. If no link exist it
+    '''Choose randomly a link belonging to cat. If no link exists it
     returns None'''
     l = clinks((contentFileName, cat))
     if l:
@@ -157,14 +158,14 @@ def choiceCategory(structureFileName, cat, p):
         return cat
 
 
-def choiceSubcategoriesPairs(structureFileName, options):
+def choiceSubcategoriesPairs(options):
     '''return a set of pairs of categories randomly choosen'''
     
-    pf = lambda:choiceSubcategory(structureFileName, options.posCR, options.rp)
-    nf = lambda:choiceSubcategory(structureFileName, options.negCR, options.rp)
+    pf = lambda:choiceSubcategory(options.s, options.posCR, options.rp)
+    nf = lambda:choiceSubcategory(options.s, options.negCR, options.rp)
 
     res = set()
-    while len(res) < options.s:
+    while len(res) < options.S:
         res.add((pf(),nf()))
     return res
 
@@ -209,10 +210,10 @@ def html2text_cmd(topic_id, doc_index, options):
     return cmd
 
 
-def createDocuments(dcl, bd, options):
+def createDocuments(dcl, d, options):
     '''Create documents in techtc format given dcl, a dictionary
     mapping all subcategories and a set of links (web pages), and bd,
-    a bidict associating topics and their ids'''
+    a dict associating topics and their ids'''
 
     # create directory to put the documents
     print "Create techtc directory"
@@ -223,15 +224,15 @@ def createDocuments(dcl, bd, options):
     for c in dcl:
         print "Download all links of",c
         print "Create topic directory"
-        mkdir_cmd = "mkdir " + topic_dir(options, bd[c])
+        mkdir_cmd = "mkdir " + topic_dir(options, d[c])
         print mkdir_cmd
         os.system(mkdir_cmd)
         print "Added file containing the topic"
-        topic_cmd = "echo " + c + " > " + topic_path(options, bd[c])
+        topic_cmd = "echo " + c + " > " + topic_path(options, d[c])
         print topic_cmd
         os.system(topic_cmd)
         print "Start downloading links"
-        downloadLinks(bd[c], dcl[c], options)
+        downloadLinks(d[c], dcl[c], options)
 
 def fillTechtcFormatDocument(options, topic_id, doc_index):
     print "Fill document in techtc format"
@@ -275,7 +276,7 @@ def downloadLinks(topic_id, ls, options):
         fillTechtcFormatDocument(options, topic_id, i)
         i += 1
 
-def dictCatLinks(contentFileName, structureFileName, spl, options):
+def dictCatLinks(spl, options):
     '''Create a dictionary mapping each subcategory to a set of
     links. spl is a set of pairs of categories gotten from
     choiceSubcategoriesPairs'''
@@ -283,9 +284,9 @@ def dictCatLinks(contentFileName, structureFileName, spl, options):
     res = {}
     
     if options.d:               # deterministic link selection
-        f = lambda x: collectLinksBFS(contentFileName, structureFileName, x, options.l)
+        f = lambda x: collectLinksBFS(options.c, options.s, x, options.l)
     else:                       # random link selection
-        f = lambda x: choiceCollectLinks(contentFileName, structureFileName, x, options.l, options.rp, options.l*100)
+        f = lambda x: choiceCollectLinks(options.c, options.s, x, options.l, options.rp, options.l*100)
 
     for psc,nsc in spl:
         print "Select",options.l,"links of positive subcategory",psc
@@ -306,7 +307,7 @@ def dictTopicId(contentFileName, cats):
         topic = t.attrib[r()+"id"]
         if topic in cats:
             d[topic] = t.findtext(ns()+"catid")
-            print "d =",d
+            print topic, "has id", d[topic]
         t.clear()
     cf.close()
     return d
@@ -332,22 +333,31 @@ def organizeDocuments(spl, bd, options):
         print "Move the negative documents in it"
         cmd = "mv " + techtc_doc_path(options, bd[n]) + " " + dsd_n
         print cmd
-        os.system(cmd)
+        os.system(cmd)    
 
-
-def build_techtc(contentFileName, structureFileName, options):
-    print "Choose", options.s, "pairs of subcategories of", options.posCR, "and", options.negCR, "respectively"
-    spl = choiceSubcategoriesPairs(structureFileName, options)
+        
+def build_techtc(options):
+    if options.C:               # use dump file from a previous parse
+        inputDumpFile = open(options.i)
+        d, dcl, spl = pickle.load(inputDumpFile)
+    else:
+        print "Choose", options.S, "pairs of subcategories of", options.posCR, "and", options.negCR, "respectively"
+        spl = choiceSubcategoriesPairs(options)
     
-    print "Associate the id of each subcategory"
-    cats = set.union(*[set(p) for p in spl])
-    d = dictTopicId(contentFileName, cats)
-    print d
+        print "Associate the id of each subcategory"
+        cats = set.union(*[set(p) for p in spl])
+        d = dictTopicId(options.s, cats)
     
-    print "For each subcategory select", options.l, "links"
-    dcl = dictCatLinks(contentFileName, structureFileName, spl, options)
-    print "Total number of positive and negative subcategories =", len(dcl)
+        print "For each subcategory select", options.l, "links"
+        dcl = dictCatLinks(spl, options)
+        print "Total number of positive and negative subcategories =", len(dcl)
 
+        if options.P:               # only parse
+            # dump d, dcl and spl
+            outputLinksFile = open(options.o, "w")
+            pickle.dump((d, dcl, spl), outputLinksFile)
+            return
+        
     print "Create documents in techtc format for all subcategories"
     createDocuments(dcl, d, options)
 
@@ -356,8 +366,14 @@ def build_techtc(contentFileName, structureFileName, options):
 
 
 def main():
-    usage = "Usage: %prog CONTENT_RDF_FILE STRUCTURE_RDF_FILE"
+    usage = "Usage: %prog [Options]"
     parser = OptionParser(usage)
+    parser.add_option("-c", "--content-file",
+                      dest="c", default="content.rdf.u8",
+                      help="ODP RDF content file. [default: %default]")
+    parser.add_option("-s", "--structure-file",
+                      dest="s", default="structure.rdf.u8",
+                      help="ODP RDF structure file. [default: %default]")
     parser.add_option("-p", "--positive-category-root",
                       dest="posCR", default="Top/Arts",
                       help="Category root of the sub-categories used for positive documents. [default: %default]")
@@ -367,8 +383,8 @@ def main():
     parser.add_option("-r", "--recursive-probability", type="float",
                       dest="rp", default=0.5,
                       help="Probability of searching in the ODP in depth. [default: %default]")
-    parser.add_option("-s", "--techtc-size", type="int",
-                      dest="s", default=300,
+    parser.add_option("-S", "--techtc-size", type="int",
+                      dest="S", default=300,
                       help="Size of the techtc generated. [default: %default]")
     parser.add_option("-l", "--documents-number", type="int",
                       dest="l", default=200,
@@ -378,22 +394,34 @@ def main():
                       help="Select the links within a subcategory in BFS order (faster). Otherwise it is selected ramdonly (much slower).")
     parser.add_option("-o", "--output-directory",
                       dest="o", default="__default__",
-                      help="Directory where to download the web pages. [default: %default]")
+                      help="Directory where to download the web pages and place the dataset collection. [default: techtc_SIZE] where SIZE is the size of the dataset collection given by option S. If option -P is used then it denotes the place where to dump the data collected during parsing. [default: techtc_SIZE.dump]")
+    parser.add_option("-i", "--input-dump-file",
+                      dest="i", default="__default__",
+                      help="Dump file to load in case options -C is used. [default: techtc_SIZE.dump] where SIZE is the size of the dataset collection given by option -S.")
     parser.add_option("-Q", "--quota", type="int",
                       dest="Q", default=100000,
                       help="Maximum number of bytes to retreive per link. [default: %default]")
+    parser.add_option("-P", "--only-parse", action="store_true",
+                      dest="P",
+                      help="Perform only parsing and output on the Maximum number of bytes to retreive per link.")
+    parser.add_option("-C", "--only-create-techtc", action="store_true",
+                      dest="C",
+                      help="Perform techtc creation given a techtc dump file gotten with option -P.")
     (options, args) = parser.parse_args()
 
-    if len(args) != 2:
+    if len(args) != 0:
         parser.error("incorrect number of arguments. Use --help to get more information")
 
-    contentFileName=args[0]
-    structureFileName=args[1]
-
     if options.o == "__default__":
-        options.o = "techtc_"+str(options.s)
-    
-    build_techtc(contentFileName, structureFileName, options)
+        options.o = "techtc_"+str(options.S)
+        if options.P:
+            options.o = options.o+".dump"
+
+    if options.i == "__default__":
+        options.i = "techtc_"+str(options.S)
+        options.i = options.o+".dump"
+
+    build_techtc(options)
 
     print "Cache failures for links =", clinks.get_failures()
     print "Cache hits for links =", clinks.get_hits()
