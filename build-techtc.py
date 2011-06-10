@@ -22,11 +22,11 @@ class Cache:
     def __call__(self, x):
         self._calls += 1
         if x not in self._d:
+            y = self._f(*x)
             if len(self._d) < self._s:
-                self._d[x] = self._f(*x)
-            else:
-                return self._f(*x)
+                self._d[x] = y
             self._failures += 1
+            return y
         return self._d[x]
 
     def get_failures(self):
@@ -83,22 +83,24 @@ def collectLinks(contentFileName, cats, n = None):
     return l
 
 
-def collectLinksBFS(contentFileName, structureFileName, cat, n):
+def collectLinksBFS(cat, options):
     '''collects up to n links in BFS order from category cat.'''
     cats = [cat]
     l = []
     s = len(l)
+    n = options.l
     while s < n and len(cats) > 0:
-        l += collectLinks(contentFileName, cats, n - s)
+        l += collectLinks(options.c, cats, n - s)
         s = len(l)
         if s < n:
-            cats = sum([subcategories(structureFileName, cat) for cat in cats],[])
+            cats = sum([csubcategories((options.s, cat, tuple(options.subtopic_tags)))
+                        for cat in cats],[])
         else:
             return l[:n]
     return l
 
 
-def choiceCollectLinks(contentFileName, structureFileName, cat, n, p, m = -1):
+def choiceCollectLinks(cat, options, m = -1):
     '''randomly choose a set of links belonging to a category (or its
     subcategories). If after m attempts the number of links n hasn't
     been reached (considering that duplicated links are ignored) then
@@ -106,10 +108,11 @@ def choiceCollectLinks(contentFileName, structureFileName, cat, n, p, m = -1):
     in the number of attempts (which can lead to infinit loop). p is
     the probability to dig deeper in the hierarchy to get the links.'''
     res = set()
+    n = options.l
     while len(res) < n and m != 0:
-        scat = choiceCategory(structureFileName, cat, p)
+        scat = choiceCategory(cat, options)
         if scat:
-            link = choiceLinks(contentFileName, scat)
+            link = choiceLinks(options.c, scat)
             if link:
                 if link not in res:
                     res.add(link)
@@ -118,13 +121,14 @@ def choiceCollectLinks(contentFileName, structureFileName, cat, n, p, m = -1):
     return res
 
 
-def subcategories(structureFileName, cat):
+def subcategories(structureFileName, cat, subtopic_tags):
     '''return the list of direct subcategories of cat. If there isn't
     such cat then it returns the empty list.'''
     sf = open(structureFileName)
     for _,t in etree.iterparse(sf, tag = ns()+"Topic"):
         if cat == t.attrib[r()+"id"]:
-            l = [n.attrib[r()+"resource"] for n in t.iter() if "narrow" in n.tag]
+            l = [n.attrib[r()+"resource"] for n in t.iter()
+                 if any((st in n.tag) for st in subtopic_tags)]
             t.clear()
             return l
         t.clear()
@@ -133,17 +137,18 @@ def subcategories(structureFileName, cat):
 
 csubcategories = Cache(subcategories, cache_size)
 
-def choiceSubcategory(structureFileName, cat, p):
+def choiceSubcategory(cat, options):
     '''given a category choose randomly a subcategory from it. p is
     the probability to choose a subcategory which is not a direct
     child of cat. struct_root is the root element of the
     structure.rdf.u8 file.'''
     
-    l = csubcategories((structureFileName, cat))
+    l = csubcategories((options.s, cat, tuple(options.subtopic_tags)))
+    p = options.rp
     if l:
         sc = choice(l)
         if random() <= p:
-            scr = choiceSubcategory(structureFileName, sc, p)
+            scr = choiceSubcategory(sc, options)
             if scr:
                 sc = scr
         return sc
@@ -151,10 +156,11 @@ def choiceSubcategory(structureFileName, cat, p):
         return None
 
 
-def choiceCategory(structureFileName, cat, p):
+def choiceCategory(cat, options):
     '''like choiceSubcategory but consider cat as a result too'''
+    p = options.rp
     if random() <= p:
-        return choiceSubcategory(structureFileName, cat, p)
+        return choiceSubcategory(cat, options)
     else:
         return cat
 
@@ -162,8 +168,8 @@ def choiceCategory(structureFileName, cat, p):
 def choiceSubcategoriesPairs(options):
     '''return a set of pairs of categories randomly choosen'''
     
-    pf = lambda:choiceSubcategory(options.s, options.posCR, options.rp)
-    nf = lambda:choiceSubcategory(options.s, options.negCR, options.rp)
+    pf = lambda:choiceSubcategory(options.posCR, options)
+    nf = lambda:choiceSubcategory(options.negCR, options)
 
     res = set()
     while len(res) < options.S:
@@ -298,9 +304,10 @@ def dictCatLinks(spl, options):
     res = {}
     
     if options.d:               # deterministic link selection
-        f = lambda x: collectLinksBFS(options.c, options.s, x, options.l)
+        f = lambda x: collectLinksBFS(x, options)
     else:                       # random link selection
-        f = lambda x: choiceCollectLinks(options.c, options.s, x, options.l, options.rp, options.l*100)
+        # TODO add options instead of that ad hoc number
+        f = lambda x: choiceCollectLinks(x, options, options.l*100) 
 
     for psc,nsc in spl:
         print "Select",options.l,"links for positive subcategory",psc
@@ -388,7 +395,6 @@ def build_techtc(options):
 def main():
     usage = "Usage: %prog [Options]"
     parser = OptionParser(usage)
-    # TODO use default dest
     parser.add_option("-c", "--content-file",
                       dest="c", default="content.rdf.u8",
                       help="ODP RDF content file. [default: %default]")
@@ -431,9 +437,8 @@ def main():
     parser.add_option("-C", "--only-create-techtc", action="store_true",
                       dest="C",
                       help="Perform techtc creation given a techtc dump file gotten with option -P.")
-    # TODO use the following option
-    parser.add_option("-t", "--subtopic-tag", action="append",
-                      default="narrow",
+    parser.add_option("-t", "--subtopic-tags", action="append",
+                      default=["narrow"],
                       help="Use the following tag prefix to find subtopics of a given topic.")
     (options, args) = parser.parse_args()
 
