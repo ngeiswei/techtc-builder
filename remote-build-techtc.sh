@@ -38,7 +38,9 @@ done
 OARG="$ARG -o$TECHTC_DUMP -P"
 
 # run parsing
-echo Run parsing
+echo ===================
+echo === Run parsing ===
+echo ===================
 if [ $REMOTE_PARSE == localhost ]; then
     echo build-techtc.py $OARG 
     build-techtc.py $OARG
@@ -54,6 +56,9 @@ fi
 
 # built techtc locally
 # arguments for creating techtc
+echo ====================
+echo === Run building ===
+echo ====================
 IARG="$ARG -i$TECHTC_DUMP -C"
 echo Build techtc locally
 echo build-techtc.py $IARG

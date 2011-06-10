@@ -102,9 +102,9 @@ def choiceCollectLinks(contentFileName, structureFileName, cat, n, p, m = -1):
     '''randomly choose a set of links belonging to a category (or its
     subcategories). If after m attempts the number of links n hasn't
     been reached (considering that duplicated links are ignored) then
-    it return None. If m is negative then there is no limit in the
-    number of attempts (which can lead to infinit loop). p is the
-    probability to dig deeper in the hierarchy to get the links.'''
+    it returns the empty set. If m is negative then there is no limit
+    in the number of attempts (which can lead to infinit loop). p is
+    the probability to dig deeper in the hierarchy to get the links.'''
     res = set()
     while len(res) < n and m != 0:
         scat = choiceCategory(structureFileName, cat, p)
@@ -113,6 +113,7 @@ def choiceCollectLinks(contentFileName, structureFileName, cat, n, p, m = -1):
             if link:
                 if link not in res:
                     res.add(link)
+                    print len(res), link
         m -= 1
     return res
 
@@ -166,7 +167,10 @@ def choiceSubcategoriesPairs(options):
 
     res = set()
     while len(res) < options.S:
-        res.add((pf(),nf()))
+        p = (pf(), nf())
+        if p not in res:
+            res.add(p)
+            print len(res),p
     return res
 
 
@@ -195,7 +199,7 @@ def wget_cmd(topic_id, doc_index, link, options):
     cmd += " -linf"
     cmd += " -Rgif,jpeg,jpg,png,swf,css,rss,ico,js"
     cmd += " -Q" + str(options.Q)
-    cmd += " " + link
+    cmd += " \"" + link + "\""
     cmd += " -O \"" + doc_path_html(options, topic_id, doc_index) + "\""
     cmd += " -q"
     return cmd
@@ -208,6 +212,16 @@ def html2text_cmd(topic_id, doc_index, options):
     cmd += " -o \"" + doc_path_txt(options, topic_id, doc_index) + "\""
     cmd += " " + doc_path_html(options, topic_id, doc_index)
     return cmd
+
+
+def filterTopics(d, dcl, spl, minl):
+    '''For each topic in d, dcl and spl, remove it if it doesn't have
+    minl links in dcl'''
+
+    ndcl = {x:dcl[x] for x in dcl if len(dcl[x]) >= minl}
+    nd = {x:d[x] for x in d if x in ndcl}
+    nspl = {(p,n) for p,n in spl if p in nd and n in nd}
+    return nd, ndcl, nspl
 
 
 def createDocuments(dcl, d, options):
@@ -235,26 +249,26 @@ def createDocuments(dcl, d, options):
         downloadLinks(d[c], dcl[c], options)
 
 def fillTechtcFormatDocument(options, topic_id, doc_index):
-    print "Fill document in techtc format"
     tdc = techtc_doc_path(options, topic_id)
+    print "Fill document",tdc,"in techtc format"
     rtdc = " >> " + "\"" + tdc + "\""
     cmd = "echo \"<dmoz_doc>\"" + rtdc
-    print cmd
+    # print cmd
     os.system(cmd)
     cmd = "echo id=" + str(doc_index) + rtdc
-    print cmd
+    # print cmd
     os.system(cmd)
     cmd = "echo \"<dmoz_subdoc>\"" + rtdc
-    print cmd
+    # print cmd
     os.system(cmd)
     cmd = "more " + doc_path_txt(options, topic_id, doc_index) + rtdc
-    print cmd
+    # print cmd
     os.system(cmd)
     cmd = "echo \"</dmoz_subdoc>\"" + rtdc
-    print cmd
+    # print cmd
     os.system(cmd)
     cmd = "echo \"</dmoz_doc>\"" + rtdc
-    print cmd
+    # print cmd
     os.system(cmd)
         
 def downloadLinks(topic_id, ls, options):
@@ -289,10 +303,10 @@ def dictCatLinks(spl, options):
         f = lambda x: choiceCollectLinks(options.c, options.s, x, options.l, options.rp, options.l*100)
 
     for psc,nsc in spl:
-        print "Select",options.l,"links of positive subcategory",psc
+        print "Select",options.l,"links for positive subcategory",psc
         if psc not in res:
             res[psc] = f(psc)
-        print "Select",options.l,"links of negative subcategory",nsc
+        print "Select",options.l,"links for negative subcategory",nsc
         if nsc not in res:
             res[nsc] = f(nsc)
     return res
@@ -307,7 +321,7 @@ def dictTopicId(contentFileName, cats):
         topic = t.attrib[r()+"id"]
         if topic in cats:
             d[topic] = t.findtext(ns()+"catid")
-            print topic, "has id", d[topic]
+            print "id("+topic+") =", d[topic]
         t.clear()
     cf.close()
     return d
@@ -352,12 +366,18 @@ def build_techtc(options):
         dcl = dictCatLinks(spl, options)
         print "Total number of positive and negative subcategories =", len(dcl)
 
+        minl = int(options.L * options.l)
+        print "Remove topics that have less than",minl,"links"
+        ld = len(d)
+        d, dcl, spl = filterTopics(d, dcl, spl, minl)
+        print ld - len(d),"topics have been removed"
+        
         if options.P:               # only parse
             # dump d, dcl and spl
             outputLinksFile = open(options.o, "w")
             pickle.dump((d, dcl, spl), outputLinksFile)
             return
-        
+
     print "Create documents in techtc format for all subcategories"
     createDocuments(dcl, d, options)
 
@@ -368,6 +388,7 @@ def build_techtc(options):
 def main():
     usage = "Usage: %prog [Options]"
     parser = OptionParser(usage)
+    # TODO use default dest
     parser.add_option("-c", "--content-file",
                       dest="c", default="content.rdf.u8",
                       help="ODP RDF content file. [default: %default]")
@@ -389,6 +410,9 @@ def main():
     parser.add_option("-l", "--documents-number", type="int",
                       dest="l", default=200,
                       help="Number of documents per dataset. [default: %default]")
+    parser.add_option("-L", "--minimum-proportion-document-number", type="float",
+                      dest="L", default=0.9,
+                      help="In case enough links cannot be retrieved to reach the right document number (option -l) then what proportion of it we tolerate. [default: %default]")
     parser.add_option("-d", "--deterministic-link-selection",
                       action="store_true", dest="d",
                       help="Select the links within a subcategory in BFS order (faster). Otherwise it is selected ramdonly (much slower).")
@@ -407,6 +431,10 @@ def main():
     parser.add_option("-C", "--only-create-techtc", action="store_true",
                       dest="C",
                       help="Perform techtc creation given a techtc dump file gotten with option -P.")
+    # TODO use the following option
+    parser.add_option("-t", "--subtopic-tag", action="append",
+                      default="narrow",
+                      help="Use the following tag prefix to find subtopics of a given topic.")
     (options, args) = parser.parse_args()
 
     if len(args) != 0:
@@ -423,11 +451,11 @@ def main():
 
     build_techtc(options)
 
-    print "Cache failures for links =", clinks.get_failures()
-    print "Cache hits for links =", clinks.get_hits()
+    # print "Cache failures for links =", clinks.get_failures()
+    # print "Cache hits for links =", clinks.get_hits()
 
-    print "Cache failures for subcategories =", csubcategories.get_failures()
-    print "Cache hits for subcategories =", csubcategories.get_hits()
+    # print "Cache failures for subcategories =", csubcategories.get_failures()
+    # print "Cache hits for subcategories =", csubcategories.get_hits()
 
 if __name__ == "__main__":
     main()
