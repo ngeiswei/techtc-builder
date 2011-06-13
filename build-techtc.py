@@ -2,7 +2,7 @@
 import os
 import sys
 import pickle
-from random import random, choice
+from random import seed, random, choice
 from lxml import etree
 from optparse import OptionParser
 
@@ -165,19 +165,18 @@ def choiceCategory(cat, options):
         return cat
 
 
-def choiceSubcategoriesPairs(options):
-    '''return a set of pairs of categories randomly choosen'''
+def choiceSubcategoriesPairs(options, spl):
+    '''Given an initial set of pairs, insert a set of pairs of topics
+    randomly chosen'''
     
     pf = lambda:choiceSubcategory(options.posCR, options)
     nf = lambda:choiceSubcategory(options.negCR, options)
 
-    res = set()
-    while len(res) < options.S:
+    while len(spl) < options.S:
         p = (pf(), nf())
-        if p not in res:
-            res.add(p)
-            print len(res),p
-    return res
+        if p not in spl:
+            spl.add(p)
+            print len(spl),p
 
 
 def topic_dir(options, topic_id):
@@ -203,11 +202,15 @@ def wget_cmd(topic_id, doc_index, link, options):
     cmd += " -r"
     cmd += " -np"
     cmd += " -linf"
-    cmd += " -Rgif,jpeg,jpg,png,swf,css,rss,ico,js"
+    cmd += " -Rgif,jpeg,jpg,png,swf,css,rss,ico,js,wmv,mpeg,mpg,mp3,mov"
     cmd += " -Q" + str(options.Q)
     cmd += " \"" + link + "\""
     cmd += " -O \"" + doc_path_html(options, topic_id, doc_index) + "\""
-    cmd += " -q"
+    # TODO add program options for these parameters
+    cmd += " -t 1"              # try only once
+    cmd += " --random-wait"
+    cmd += " --timeout=3"       # wait 3 sec max
+    # cmd += " -q"
     return cmd
 
 
@@ -217,6 +220,7 @@ def html2text_cmd(topic_id, doc_index, options):
     cmd += " -style pretty"
     cmd += " -o \"" + doc_path_txt(options, topic_id, doc_index) + "\""
     cmd += " " + doc_path_html(options, topic_id, doc_index)
+    cmd += " &"                 # run in parallel to speed things up
     return cmd
 
 
@@ -224,9 +228,13 @@ def filterTopics(d, dcl, spl, minl):
     '''For each topic in d, dcl and spl, remove it if it doesn't have
     minl links in dcl'''
 
-    ndcl = {x:dcl[x] for x in dcl if len(dcl[x]) >= minl}
-    nd = {x:d[x] for x in d if x in ndcl}
-    nspl = {(p,n) for p,n in spl if p in nd and n in nd}
+    nspl = {(p,n) for p,n in spl if len(dcl[p]) >= minl and len(dcl[n]) >= minl}
+    if nspl:
+        cats = set.union(*[set(pa) for pa in nspl])
+    else:
+        cats = set()
+    ndcl = {x:dcl[x] for x in cats}
+    nd = {x:d[x] for x in cats}
     return nd, ndcl, nspl
 
 
@@ -296,13 +304,11 @@ def downloadLinks(topic_id, ls, options):
         fillTechtcFormatDocument(options, topic_id, i)
         i += 1
 
-def dictCatLinks(spl, options):
-    '''Create a dictionary mapping each subcategory to a set of
-    links. spl is a set of pairs of categories gotten from
+def dictCatLinks(spl, options, dcl):
+    '''Insert dcl[topic]=links for each topic of spl not already in
+    dcl. spl is a set of pairs of categories gotten from
     choiceSubcategoriesPairs'''
 
-    res = {}
-    
     if options.d:               # deterministic link selection
         f = lambda x: collectLinksBFS(x, options)
     else:                       # random link selection
@@ -310,28 +316,26 @@ def dictCatLinks(spl, options):
         f = lambda x: choiceCollectLinks(x, options, options.l*100) 
 
     for psc,nsc in spl:
-        print "Select",options.l,"links for positive subcategory",psc
-        if psc not in res:
-            res[psc] = f(psc)
-        print "Select",options.l,"links for negative subcategory",nsc
-        if nsc not in res:
-            res[nsc] = f(nsc)
-    return res
+        if psc not in dcl:
+            print "Select",options.l,"links for positive subcategory",psc
+            dcl[psc] = f(psc)
+        if nsc not in dcl:
+            print "Select",options.l,"links for negative subcategory",nsc
+            dcl[nsc] = f(nsc)
 
 
-def dictTopicId(contentFileName, cats):
-    '''Return a dict mapping categories to ids. cats is supposed to
-    be a set so there is no redundant element'''
-    d = {}
+def dictTopicId(contentFileName, cats, d):
+    '''Insert d[cat]=id for each category of cats not already in d'''
     cf = open(contentFileName)
     for _,t in etree.iterparse(cf, tag = ns()+"Topic"):
         topic = t.attrib[r()+"id"]
-        if topic in cats:
+        if topic in cats and topic not in d:
             d[topic] = t.findtext(ns()+"catid")
             print "id("+topic+") =", d[topic]
         t.clear()
+        if len(d) == len(cats):
+            break
     cf.close()
-    return d
 
 
 def dataset_dir(options, bd, p, n):
@@ -356,34 +360,58 @@ def organizeDocuments(spl, bd, options):
         print cmd
         os.system(cmd)    
 
-        
-def build_techtc(options):
-    if options.C:               # use dump file from a previous parse
+def buildTopicsLinks(options):
+    '''Build a triplet (d, dcl, spl) where d is a dictionary
+    associating topics and ids, dcl is a dictionary associating topics
+    and list of links, and spl is a set of pairs of topics (positive
+    vs negative). Depending on the options a dump file can be provided
+    in input so the building process will no start from scratch
+    (usefull in case of crashing). For the same reason (if the right
+    option is selected it can save preriodically the building in to a
+    dump file).'''
+
+    if options.i:               # start from a dump file
+        print "The building will start from file", options.i
         inputDumpFile = open(options.i)
         d, dcl, spl = pickle.load(inputDumpFile)
-    else:
-        print "Choose", options.S, "pairs of subcategories of", options.posCR, "and", options.negCR, "respectively"
-        spl = choiceSubcategoriesPairs(options)
+    else:                       # start from scratch
+        print "No dump file has been provided so the building will start from scratch"
+        d = {}
+        dcl = {}
+        spl = set()
+
+    while len(spl) < options.S:
+        s = options.S - len(spl)
+        print "Choose", s, "pairs of subcategories of", options.posCR, "and", options.negCR, "respectively"
+        choiceSubcategoriesPairs(options, spl)
     
         print "Associate the id of each subcategory"
         cats = set.union(*[set(p) for p in spl])
-        d = dictTopicId(options.s, cats)
+        dictTopicId(options.s, cats, d)
     
         print "For each subcategory select", options.l, "links"
-        dcl = dictCatLinks(spl, options)
+        dictCatLinks(spl, options, dcl)
         print "Total number of positive and negative subcategories =", len(dcl)
 
         minl = int(options.L * options.l)
-        print "Remove topics that have less than",minl,"links"
-        ld = len(d)
+        print "Remove pairs of topics with less than",minl,"links"
+        l = len(spl)
         d, dcl, spl = filterTopics(d, dcl, spl, minl)
-        print ld - len(d),"topics have been removed"
+        print l - len(spl),"pairs have been removed"
+    
+    return d, dcl, spl
         
-        if options.P:               # only parse
-            # dump d, dcl and spl
-            outputLinksFile = open(options.o, "w")
-            pickle.dump((d, dcl, spl), outputLinksFile)
-            return
+def build_techtc(options):
+
+    seed(options.random_seed)
+    
+    d, dcl, spl = buildTopicsLinks(options)
+    
+    if options.P:               # only parse
+        # dump d, dcl and spl
+        outputLinksFile = open(options.o, "w")
+        pickle.dump((d, dcl, spl), outputLinksFile)
+        return
 
     print "Create documents in techtc format for all subcategories"
     createDocuments(dcl, d, options)
@@ -395,6 +423,9 @@ def build_techtc(options):
 def main():
     usage = "Usage: %prog [Options]"
     parser = OptionParser(usage)
+    parser.add_option("-r", "--random-seed",
+                      default=1,
+                      help="Random seed. [default: %default]")
     parser.add_option("-c", "--content-file",
                       dest="c", default="content.rdf.u8",
                       help="ODP RDF content file. [default: %default]")
@@ -407,7 +438,7 @@ def main():
     parser.add_option("-n", "--negative-category-root",
                       dest="negCR", default="Top/Science",
                       help="Category root of the sub-categories used for negative documents. [default: %default]")
-    parser.add_option("-r", "--recursive-probability", type="float",
+    parser.add_option("-R", "--recursive-probability", type="float",
                       dest="rp", default=0.5,
                       help="Probability of searching in the ODP in depth. [default: %default]")
     parser.add_option("-S", "--techtc-size", type="int",
@@ -426,20 +457,17 @@ def main():
                       dest="o", default="__default__",
                       help="Directory where to download the web pages and place the dataset collection. [default: techtc_SIZE] where SIZE is the size of the dataset collection given by option S. If option -P is used then it denotes the place where to dump the data collected during parsing. [default: techtc_SIZE.dump]")
     parser.add_option("-i", "--input-dump-file",
-                      dest="i", default="__default__",
-                      help="Dump file to load in case options -C is used. [default: techtc_SIZE.dump] where SIZE is the size of the dataset collection given by option -S.")
+                      dest="i", default="",
+                      help="Dump file to load so that the process of building the topics and links doesn't start from scratch. If no file is given then it starts from scratch. [default: %default].")
     parser.add_option("-Q", "--quota", type="int",
                       dest="Q", default=100000,
                       help="Maximum number of bytes to retreive per link. [default: %default]")
     parser.add_option("-P", "--only-parse", action="store_true",
                       dest="P",
-                      help="Perform only parsing and output on the Maximum number of bytes to retreive per link.")
-    parser.add_option("-C", "--only-create-techtc", action="store_true",
-                      dest="C",
-                      help="Perform techtc creation given a techtc dump file gotten with option -P.")
+                      help="Perform only parsing (building of topics and links), do not download web pages, and save the result in the file provided with options -o.")
     parser.add_option("-t", "--subtopic-tags", action="append",
                       default=["narrow"],
-                      help="Use the following tag prefix to find subtopics of a given topic.")
+                      help="Use the following tag prefixes to find subtopics of a given topic.")
     (options, args) = parser.parse_args()
 
     if len(args) != 0:
@@ -450,9 +478,9 @@ def main():
         if options.P:
             options.o = options.o+".dump"
 
-    if options.i == "__default__":
-        options.i = "techtc_"+str(options.S)
-        options.i = options.o+".dump"
+    # if options.i == "__default__":
+    #     options.i = "techtc_"+str(options.S)
+    #     options.i = options.o+".dump"
 
     build_techtc(options)
 

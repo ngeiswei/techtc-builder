@@ -59,7 +59,7 @@ fi
 echo ====================
 echo === Run building ===
 echo ====================
-IARG="$ARG -i$TECHTC_DUMP -C"
+IARG="$ARG -i$TECHTC_DUMP"
 echo Build techtc locally
 echo build-techtc.py $IARG
 build-techtc.py $IARG
