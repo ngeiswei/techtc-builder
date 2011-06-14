@@ -83,6 +83,12 @@ def collectLinks(contentFileName, cats, n = None):
     return l
 
 
+def printLinks(ls):
+    i = 0
+    for l in ls:
+        i += 1
+        print i, l
+
 def collectLinksBFS(cat, options):
     '''collects up to n links in BFS order from category cat.'''
     cats = [cat]
@@ -93,10 +99,13 @@ def collectLinksBFS(cat, options):
         l += collectLinks(options.c, cats, n - s)
         s = len(l)
         if s < n:
-            cats = sum([csubcategories((options.s, cat, tuple(options.subtopic_tags)))
-                        for cat in cats],[])
+            cats = sum([csubcategories((options.s, cat,
+                                        tuple(options.subtopic_tags)))
+                        for cat in cats], [])
         else:
+            printLinks(l[:n])
             return l[:n]
+    printLinks(l)
     return l
 
 
@@ -121,13 +130,18 @@ def choiceCollectLinks(cat, options, m = -1):
     return res
 
 
+def rmSym(topic):
+    '''Remove the prefix "PREFIX:" in topic. This happens when the
+    topic has been obtained from a symbolic link'''
+    return topic.partition(':')[2] if ':' in topic else topic
+
 def subcategories(structureFileName, cat, subtopic_tags):
     '''return the list of direct subcategories of cat. If there isn't
     such cat then it returns the empty list.'''
     sf = open(structureFileName)
     for _,t in etree.iterparse(sf, tag = ns()+"Topic"):
         if cat == t.attrib[r()+"id"]:
-            l = [n.attrib[r()+"resource"] for n in t.iter()
+            l = [rmSym(n.attrib[r()+"resource"]) for n in t.iter()
                  if any((st in n.tag) for st in subtopic_tags)]
             t.clear()
             return l
@@ -466,7 +480,7 @@ def main():
                       dest="P",
                       help="Perform only parsing (building of topics and links), do not download web pages, and save the result in the file provided with options -o.")
     parser.add_option("-t", "--subtopic-tags", action="append",
-                      default=["narrow"],
+                      default=["narrow", "symbolic"],
                       help="Use the following tag prefixes to find subtopics of a given topic.")
     (options, args) = parser.parse_args()
 
