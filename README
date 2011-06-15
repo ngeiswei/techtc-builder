@@ -25,11 +25,9 @@ REQUIREMENTS
 - dmoz RDF dump files structure.rdf.u8 and content.rdf.u8. Can be
   downloaded at http://www.dmoz.org/rdf.html
 
-- One the following software to convert html to text
+- One the following text based web browser
 
-* html2text http://www.mbayer.de/html2text/files.shtml
-
-* w3m http://w3m.sourceforge.net/
+* w3m, lynx, elinks, links, links2
 
 - wget
 

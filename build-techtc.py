@@ -240,22 +240,45 @@ def wget_cmd(topic_id, doc_index, link, options):
     cmd += " -t 1"              # try only once
     cmd += " --random-wait"
     cmd += " --timeout=3"       # wait 3 sec max
-    # cmd += " -q"
+    cmd += " -q"
     return cmd
 
 
 def html2text_cmd(topic_id, doc_index, options):
-    cmd = "html2text"
-    cmd += " -ascii"
-    cmd += " -style pretty"
-    cmd += " -o \"" + doc_path_txt(options, topic_id, doc_index) + "\""
-    cmd += " " + doc_path_html(options, topic_id, doc_index)
-    return cmd
+    return globals()[options.H+"_cmd"](topic_id, doc_index, options)
 
 
 def w3m_cmd(topic_id, doc_index, options):
     cmd = "w3m"
     cmd += " -T text/html"
+    cmd += " -dump " + doc_path_html(options, topic_id, doc_index)
+    cmd += " > \"" + doc_path_txt(options, topic_id, doc_index) + "\""
+    return cmd
+
+
+def lynx_cmd(topic_id, doc_index, options):
+    cmd = "lynx"
+    cmd += " -dump " + doc_path_html(options, topic_id, doc_index)
+    cmd += " > \"" + doc_path_txt(options, topic_id, doc_index) + "\""
+    return cmd
+
+
+def elinks_cmd(topic_id, doc_index, options):
+    cmd = "elinks"
+    cmd += " -dump " + doc_path_html(options, topic_id, doc_index)
+    cmd += " > \"" + doc_path_txt(options, topic_id, doc_index) + "\""
+    return cmd
+
+
+def links_cmd(topic_id, doc_index, options):
+    cmd = "links"
+    cmd += " -dump " + doc_path_html(options, topic_id, doc_index)
+    cmd += " > \"" + doc_path_txt(options, topic_id, doc_index) + "\""
+    return cmd
+
+
+def links2_cmd(topic_id, doc_index, options):
+    cmd = "links2"
     cmd += " -dump " + doc_path_html(options, topic_id, doc_index)
     cmd += " > \"" + doc_path_txt(options, topic_id, doc_index) + "\""
     return cmd
@@ -307,22 +330,22 @@ def fillTechtcFormatDocument(options, topic_id, doc_index):
     print "Fill document",tdc,"in techtc format"
     rtdc = " >> " + "\"" + tdc + "\""
     cmd = "echo \"<dmoz_doc>\"" + rtdc
-    # print cmd
+    print cmd
     os.system(cmd)
     cmd = "echo id=" + str(doc_index) + rtdc
-    # print cmd
+    print cmd
     os.system(cmd)
     cmd = "echo \"<dmoz_subdoc>\"" + rtdc
-    # print cmd
+    print cmd
     os.system(cmd)
-    cmd = "more " + doc_path_txt(options, topic_id, doc_index) + rtdc
-    # print cmd
+    cmd = "cat " + doc_path_txt(options, topic_id, doc_index) + rtdc
+    print cmd
     os.system(cmd)
     cmd = "echo \"</dmoz_subdoc>\"" + rtdc
-    # print cmd
+    print cmd
     os.system(cmd)
     cmd = "echo \"</dmoz_doc>\"" + rtdc
-    # print cmd
+    print cmd
     os.system(cmd)
         
 def downloadLinks(topic_id, ls, options):
@@ -337,13 +360,8 @@ def downloadLinks(topic_id, ls, options):
         print cmd
         os.system(cmd)
         # convert them into text
-        if options.H == "html2text":
-            cmd = html2text_cmd(topic_id, i, options)
-        elif options.H == "w3m":
-            cmd = w3m_cmd(topic_id, i, options)
-        else:
-            assert False, "options -H "+options.H+" is incorrect"
-        cmd += " &"             # run in parallel to speed things up
+        cmd = html2text_cmd(topic_id, i, options)
+        # cmd += " &"             # run in parallel to speed things up
         print cmd
         os.system(cmd)
         # fill document in techtc format for that topic
@@ -381,13 +399,15 @@ def dictTopicIdLinks(topics, til, options):
     cf.close()
         
 
-def dataset_dir(options, til, p, n):
-    return options.O + "/" + "Exp_" + getId(til[p]) + "_" + getId(til[n])
+def dataset_dir(options, p_id, n_id):
+    return options.O + "/" + "Exp_" + p_id + "_" + n_id
 
 
 def organizeDocuments(spl, til, options):
     for p,n in spl:
-        dsd = dataset_dir(options, til, p, n)
+        p_id = getId(til[0][p])
+        n_id = getId(til[1][n])
+        dsd = dataset_dir(options, p_id, n_id)
         dsd_p = dsd + "/all_pos.txt"
         dsd_n = dsd + "/all_neg.txt"
         print "Create dataset directory for " + p + "vs" + n
@@ -395,13 +415,14 @@ def organizeDocuments(spl, til, options):
         print cmd
         os.system(cmd)
         print "Move the positve documents in it"
-        cmd = "mv " + techtc_doc_path(options, getId(til[p])) + " " + dsd_p
+        cmd = "cp " + techtc_doc_path(options, p_id) + " " + dsd_p
         print cmd
         os.system(cmd)
         print "Move the negative documents in it"
-        cmd = "mv " + techtc_doc_path(options, getId(til[n])) + " " + dsd_n
+        cmd = "cp " + techtc_doc_path(options, n_id) + " " + dsd_n
         print cmd
-        os.system(cmd)    
+        os.system(cmd)
+
 
 def buildTopicsIdsLinks(options):
     '''Build a dictionary mapping each topic to pair composed by its
@@ -458,6 +479,7 @@ def til_union(til):
     til_u.update(til[1])
     return til_u
 
+
 def build_techtc(options):
 
     seed(options.random_seed)   # seed the random generator
@@ -506,8 +528,8 @@ def main():
     parser.add_option("-L", "--max-documents", type="int",
                       dest="L", default=200,
                       help="Maximum mumber of documents per category. [default: %default]")
-    parser.add_option("-l", "--minimum-proportion-document-number", type="float",
-                      dest="l", default=0.6,
+    parser.add_option("-l", "--minimum-proportion-document-number",
+                      type="float", dest="l", default=0.6,
                       help="In case enough links cannot be retrieved to reach the right document number (option -L) then what proportion of it we tolerate. [default: %default]")
     parser.add_option("-d", "--deterministic-link-selection",
                       action="store_true", dest="d",
@@ -519,7 +541,7 @@ def main():
                       dest="i", default="",
                       help="Dump file to load so that the process of building the topics and links doesn't start from scratch. If no file is given then it starts from scratch. [default: %default]")
     parser.add_option("-O", "--output-directory",
-                      dest="o", default="__default__",
+                      dest="O", default="__default__",
                       help="Directory where to download the web pages and place the dataset collection. [default: techtc_SIZE] where SIZE is the size of the dataset collection given by option S.")
     parser.add_option("-Q", "--quota", type="int",
                       dest="Q", default=100000,
@@ -532,20 +554,14 @@ def main():
                       help="Use the following tag prefixes to find subtopics of a given topic.")
     parser.add_option("-H", "--html2text", dest="H",
                       default="w3m",
-                      help="Software to convert html into text. The choices are html2text (http://www.mbayer.de/html2text/files.shtml), w3m (http://w3m.sourceforge.net/). [default: %default]")
+                      help="Software to convert html into text. The supported softwares are w3m, lynx, elinks, links, links2. [default: %default]")
     (options, args) = parser.parse_args()
 
     if len(args) != 0:
         parser.error("incorrect number of arguments. Use --help to get more information")
 
-    if options.o == "__default__":
-        options.o = "techtc_"+str(options.S)
-        if options.P:
-            options.o = options.o+".dump"
-
-    # if options.i == "__default__":
-    #     options.i = "techtc_"+str(options.S)
-    #     options.i = options.i+".dump"
+    if options.O == "__default__":
+        options.O = "techtc"+str(options.S)
 
     build_techtc(options)
 
@@ -554,6 +570,7 @@ def main():
 
     # print "Cache failures for subtopics =", csubtopics.get_failures()
     # print "Cache hits for subtopics =", csubtopics.get_hits()
+
 
 if __name__ == "__main__":
     main()
