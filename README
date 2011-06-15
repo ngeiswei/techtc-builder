@@ -1,20 +1,77 @@
+INTRODUCTION
+------------
+
 techtc-builder is a software to build a dataset collection similar to
 the techtc300 http://techtc.cs.technion.ac.il/techtc300/.
 
-Requirements
+
+INSTALLATION
+------------
+
+Run the following script (most likely in super user mode)
+
+# ./install.sh
+
+You can specify the prefix where to install with option --prefix, such as
+
+# ./install --prefix /usr
+
+
+REQUIREMENTS
+------------
 
 - Python 2.6 or above
-
-- html2text version 1.3.2a
-  http://www.mbayer.de/html2text/files.shtml      
-
-- wget
 
 - dmoz RDF dump files structure.rdf.u8 and content.rdf.u8. Can be
   downloaded at http://www.dmoz.org/rdf.html
 
-Recommanded
+- One the following software to convert html to text
 
-- 8GB of RAM
+* html2text http://www.mbayer.de/html2text/files.shtml
 
-- A good internet connection
+* w3m http://w3m.sourceforge.net/
+
+- wget
+
+
+USAGE
+-----
+
+1) Download structure.rdf.u8 and content.rdf.u8 from
+http://www.dmoz.org/rdf.html
+
+2) Strip the dmoz files from useless content:
+
+$ strip_dmoz_rdf.py structure.rdf.u8 -o structure_stripped.rdf.u8
+
+$ strip_dmoz_rdf.py content.rdf.u8 -o content_stripped.rdf.u8
+
+This is gonna take a few minutes but will greatly speed up the
+next step as well as lower memory usage.
+
+3) Create a techtc300
+
+$ build-techtc.py -c content_stripped.rdf.u8 -s structure_stripped.rdf.u8 -S 300
+
+This will create a directory techtc300 with the dataset collection
+inside. In fact the options are the default ones so the following
+
+$ build-techtc.py
+
+does the same thing.
+
+There are multiple options, you can get the list of them using
+--help. The default (and recommended) tool used to convert html to
+text is w3m, you can change that using option -H such as
+
+$ build-techtc.py -H html2text
+
+here it will use html2text
+(http://www.mbayer.de/html2text/files.shtml) instead of w3m.
+
+
+AUTHOR
+------
+
+Nil Geisweiller
+email: ngeiswei@gmail.com
