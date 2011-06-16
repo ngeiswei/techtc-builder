@@ -308,15 +308,21 @@ def createDocuments(til, options):
     mkdir_cmd = "mkdir " + options.O
     print mkdir_cmd
     os.system(mkdir_cmd)
+
+    # total number of links to download
+    global total_n_links
+    total_n_links = sum([len(getLinks(til[k])) for k in til])
     
+    i = 0
     for t in til:
+        i += 1
         print "Download all links of",t
         print "Create topic directory"
         t_id = getId(til[t])
         mkdir_cmd = "mkdir " + topic_dir(options, t_id)
         print mkdir_cmd
         os.system(mkdir_cmd)
-        print "Added file containing the topic"
+        print "Added file containing topic",str(i)+"/"+str(len(til))
         topic_cmd = "echo " + t + " > " + topic_path(options, t_id)
         print topic_cmd
         os.system(topic_cmd)
@@ -326,28 +332,40 @@ def createDocuments(til, options):
 
 
 def fillTechtcFormatDocument(options, topic_id, doc_index):
-    tdc = techtc_doc_path(options, topic_id)
-    print "Fill document",tdc,"in techtc format"
-    rtdc = " >> " + "\"" + tdc + "\""
-    cmd = "echo \"<dmoz_doc>\"" + rtdc
-    print cmd
-    os.system(cmd)
-    cmd = "echo id=" + str(doc_index) + rtdc
-    print cmd
-    os.system(cmd)
-    cmd = "echo \"<dmoz_subdoc>\"" + rtdc
-    print cmd
-    os.system(cmd)
-    cmd = "cat " + doc_path_txt(options, topic_id, doc_index) + rtdc
-    print cmd
-    os.system(cmd)
-    cmd = "echo \"</dmoz_subdoc>\"" + rtdc
-    print cmd
-    os.system(cmd)
-    cmd = "echo \"</dmoz_doc>\"" + rtdc
-    print cmd
-    os.system(cmd)
-        
+    dpt = doc_path_txt(options, topic_id, doc_index)
+    # append the document only if it exceeds options.q * options.Q
+    dpt_size = os.path.getsize(dpt)
+    min_size = int(options.q * options.Q)
+    if dpt_size >= min_size:
+        tdc = techtc_doc_path(options, topic_id)
+        print "Fill document",tdc,"in techtc format"
+        rtdc = " >> " + "\"" + tdc + "\""
+        cmd = "echo \"<dmoz_doc>\"" + rtdc
+        # print cmd
+        os.system(cmd)
+        cmd = "echo id=" + str(doc_index) + rtdc
+        # print cmd
+        os.system(cmd)
+        cmd = "echo \"<dmoz_subdoc>\"" + rtdc
+        # print cmd
+        os.system(cmd)
+        cmd = "cat " + dpt + rtdc
+        # print cmd
+        os.system(cmd)
+        cmd = "echo \"</dmoz_subdoc>\"" + rtdc
+        # print cmd
+        os.system(cmd)
+        cmd = "echo \"</dmoz_doc>\"" + rtdc
+        # print cmd
+        os.system(cmd)
+    else:
+        print "Warning: the size of " + dpt + ", " + str(dpt_size) + " is too low (should be " + str(min_size) + " at least)"
+
+
+link_idx = 0
+total_n_links = 0
+
+
 def downloadLinks(topic_id, ls, options):
     '''Download links ls and place the content of each link in a file
     under topic_id directory. The files are indexed from 0 to
@@ -355,6 +373,9 @@ def downloadLinks(topic_id, ls, options):
 
     i = 0
     for l in ls:
+        global link_idx
+        link_idx += 1
+        print "Download link " + str(link_idx) + "/" + str(total_n_links)
         # download links
         cmd = wget_cmd(topic_id, i, l, options)
         print cmd
@@ -455,6 +476,10 @@ def buildTopicsIdsLinks(options):
     print "Associate id and", options.L, "links to each negative subtopic"
     dictTopicIdLinks(nts, ntil, options)
 
+    if options.o:
+        with open(options.o, "w") as outputDumpFile:
+            pickle.dump((ptil, ntil), outputDumpFile)
+    
     minl = int(options.l * options.L)
     print "Remove postive topics with less than", minl, "links"
     ptil_len = len(ptil)
@@ -465,10 +490,6 @@ def buildTopicsIdsLinks(options):
     ntil_len = len(ntil)
     ntil = filterTopics(ntil, minl)
     print ntil_len - len(ntil), "topics have been removed"
-
-    if options.o:
-        with open(options.o, "w") as outputDumpFile:
-            pickle.dump((ptil, ntil), outputDumpFile)
 
     return ptil, ntil
 
@@ -491,8 +512,8 @@ def build_techtc(options):
     
     if not options.P:
 
-        print "Wait 5 seconds in case background commands are to be completed"
-        time.sleep(5)
+        # print "Wait 5 seconds in case background commands are to be completed"
+        # time.sleep(5)
 
         print "Create documents in techtc format for all subtopics"
         createDocuments(til_union(til), options)
@@ -546,6 +567,9 @@ def main():
     parser.add_option("-Q", "--quota", type="int",
                       dest="Q", default=100000,
                       help="Maximum number of bytes to retreive per link. [default: %default]")
+    parser.add_option("-q", "--minimum-proportion-document-quota",
+                      type="float", dest="q", default=0.01,
+                      help="Ignore documents with size under the quota (option -Q) * this ratio. [default: %default]")
     parser.add_option("-P", "--only-parse", action="store_true",
                       dest="P",
                       help="Perform only parsing (building of topics and links), do not download web pages, and save the result in the file provided with options -o.")
