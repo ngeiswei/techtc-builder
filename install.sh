@@ -13,5 +13,3 @@ eval set -- "${FLAGS_ARGV}"
 # copy the utilies under prefix/bin
 echo cp build-techtc.py "${FLAGS_prefix}/bin"
 cp build-techtc.py "${FLAGS_prefix}/bin"
-echo cp remote-build-techtc.sh "${FLAGS_prefix}/bin"
-cp remote-build-techtc.sh "${FLAGS_prefix}/bin"
