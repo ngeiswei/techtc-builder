@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 import os
 import sys
-import time
 import pickle
 from random import seed, random, choice
 from lxml import etree
@@ -241,6 +240,8 @@ def wget_cmd(topic_id, doc_index, link, options):
     cmd += " --random-wait"
     cmd += " --timeout=3"       # wait 3 sec max
     cmd += " -q"
+    # TODO this command doesn't do the right thing (wait no more than 30 sec)
+    # cmd += " & sleep 30 && kill ${!}"
     return cmd
 
 
@@ -299,15 +300,21 @@ def filterTopics(til, minl):
     return {t:til[t] for t in til if len(getLinks(til[t])) >= minl}
 
 
+def ASCII_strip(s):
+    '''Return a string where all non ascii char have been removed'''
+    return "".join(c for c in s if ord(c) < 128)
+
+
 def createDocuments(til, options):
     '''Create documents in techtc format given til, is a dict mapping
     topics and (id, links)'''
 
     # create directory to put the documents
-    print "Create techtc directory"
-    mkdir_cmd = "mkdir " + options.O
-    print mkdir_cmd
-    os.system(mkdir_cmd)
+    if not os.path.exists(options.O):
+        print "Create techtc directory"
+        mkdir_cmd = "mkdir " + options.O
+        print mkdir_cmd
+        os.system(mkdir_cmd)
 
     # total number of links to download
     global total_n_links
@@ -319,13 +326,17 @@ def createDocuments(til, options):
         print "Download all links of",t
         print "Create topic directory"
         t_id = getId(til[t])
-        mkdir_cmd = "mkdir " + topic_dir(options, t_id)
-        print mkdir_cmd
-        os.system(mkdir_cmd)
-        print "Added file containing topic",str(i)+"/"+str(len(til))
-        topic_cmd = "echo " + t + " > " + topic_path(options, t_id)
-        print topic_cmd
-        os.system(topic_cmd)
+        t_dir = topic_dir(options, t_id)
+        if not os.path.exists(t_dir):
+            mkdir_cmd = "mkdir " + topic_dir(options, t_id)
+            print mkdir_cmd
+            os.system(mkdir_cmd)
+        t_path = topic_path(options, t_id)
+        if not os.path.exists(t_path):
+            print "Add file containing topic",str(i)+"/"+str(len(til))
+            topic_cmd = "echo " + ASCII_strip(t) + " > " + t_path
+            print topic_cmd
+            os.system(topic_cmd)
         print "Start downloading links"
         t_links = getLinks(til[t])
         downloadLinks(t_id, t_links, options)
@@ -366,6 +377,8 @@ link_idx = 0
 total_n_links = 0
 
 
+# TODO some links are duplicated between topics, we should optimize so
+# that they are not downloaded multiple times
 def downloadLinks(topic_id, ls, options):
     '''Download links ls and place the content of each link in a file
     under topic_id directory. The files are indexed from 0 to
@@ -376,17 +389,23 @@ def downloadLinks(topic_id, ls, options):
         global link_idx
         link_idx += 1
         print "Download link " + str(link_idx) + "/" + str(total_n_links)
-        # download links
-        cmd = wget_cmd(topic_id, i, l, options)
-        print cmd
-        os.system(cmd)
-        # convert them into text
-        cmd = html2text_cmd(topic_id, i, options)
-        # cmd += " &"             # run in parallel to speed things up
-        print cmd
-        os.system(cmd)
-        # fill document in techtc format for that topic
-        fillTechtcFormatDocument(options, topic_id, i)
+        dpt = doc_path_txt(options, topic_id, i)
+        if os.path.exists(dpt):
+            print "Document", dpt, "has already been downloaded"
+        else:
+            # download links
+            cmd = wget_cmd(topic_id, i, l, options)
+            print cmd
+            os.system(cmd)
+            # convert them into text
+            cmd = html2text_cmd(topic_id, i, options)
+            print cmd
+            # remove now useless html file
+            cmd = "rm \"" + doc_path_html(options, topic_id, i) + "\""
+            print cmd
+            os.system(cmd)
+            # fill document in techtc format for that topic
+            fillTechtcFormatDocument(options, topic_id, i)
         i += 1
 
 
@@ -511,9 +530,6 @@ def build_techtc(options):
     spl = choiceSubtopicsPairs(til, options)
     
     if not options.P:
-
-        # print "Wait 5 seconds in case background commands are to be completed"
-        # time.sleep(5)
 
         print "Create documents in techtc format for all subtopics"
         createDocuments(til_union(til), options)

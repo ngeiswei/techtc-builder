@@ -109,7 +109,7 @@ def convertF2CSV(posFile, negFile, targetVar, outputFileName):
     # list of all words
     words = gatherWords(plws+nlws)
 
-    print len(words)
+    print outputFileName, "has", len(words), "words"
     
     # write the header of the CSV, i.e. list of words, and targetVar
     # as last argument

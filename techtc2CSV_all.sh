@@ -17,8 +17,9 @@ TECHTC_DIR=$(readlink -f $1) # get the absolute path, no matter what
 
 DIRECTORY=$(cd `dirname "$0"` && pwd)
 
-echo "Convert from DOS to Unix text format"
-find "${TECHTC_DIR}" -name "all*.txt" -type f -exec fromdos {} \;
+# this is obviously not useful if the build-techtc has been run under linux
+# echo "Convert from DOS to Unix text format"
+# find "${TECHTC_DIR}" -name "all*.txt" -type f -exec fromdos {} \;
 
 # convert all_pos.txt and all_neg.txt in each directory into a CSV
 # file where each feature is a word appearance (whether it appears in
