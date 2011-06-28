@@ -400,6 +400,7 @@ def downloadLinks(topic_id, ls, options):
             # convert them into text
             cmd = html2text_cmd(topic_id, i, options)
             print cmd
+            os.system(cmd)
             # remove now useless html file
             cmd = "rm \"" + doc_path_html(options, topic_id, i) + "\""
             print cmd
@@ -413,11 +414,11 @@ def dictTopicIdLinks(topics, til, options):
     '''Insert til[topic]=(id, links) for each topic of topics if
     not already in til.'''
 
-    if options.d:               # deterministic link selection
-        f = lambda x: collectLinksBFS(x, options)
-    else:                       # random link selection
+    if options.u:               # random link selection
         # TODO add options instead of that ad hoc number
         f = lambda x: choiceCollectLinks(x, options, options.L*100) 
+    else:                       # deterministic link selection
+        f = lambda x: collectLinksBFS(x, options)
 
     cf = open(options.c)
     i = 0
@@ -486,7 +487,7 @@ def buildTopicsIdsLinks(options):
     choiceSubtopics(options.posCR, pts, options)
 
     print "Choose", options.S, "negative subtopics of",options.negCR
-    nts = set(ptil.keys())            # negative subtopics
+    nts = set(ntil.keys())            # negative subtopics
     choiceSubtopics(options.negCR, nts, options)
 
     print "Associate id and", options.L, "links to each positive subtopic"
@@ -568,9 +569,9 @@ def main():
     parser.add_option("-l", "--minimum-proportion-document-number",
                       type="float", dest="l", default=0.6,
                       help="In case enough links cannot be retrieved to reach the right document number (option -L) then what proportion of it we tolerate. [default: %default]")
-    parser.add_option("-d", "--deterministic-link-selection",
-                      action="store_true", dest="d",
-                      help="Select the links within a subcategory in BFS order (faster). Otherwise it is selected ramdonly (much slower).")
+    parser.add_option("-u", "--random-link-selection",
+                      action="store_true", dest="u",
+                      help="Select randomly the links within a subcategory instead of in BFS order. This method is much slower.")
     parser.add_option("-o", "--output-dump-file",
                       dest="o", default="",
                       help="File where to dump intermediary results to build techtc. Useful in case of crash. [default: %default]")
