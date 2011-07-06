@@ -233,7 +233,9 @@ def wget_cmd(topic_id, doc_index, link, options):
     cmd += " -linf"
     cmd += " -Rgif,jpeg,jpg,png,swf,css,rss,ico,js,wmv,mpeg,mpg,mp3,mov"
     cmd += " -Q" + str(options.Q)
-    cmd += " \"" + link + "\""
+    # the use of ASCCI_strip below is a hacky way to avoid non-ascii
+    # addresses
+    cmd += " \"" + ASCII_strip(link) + "\""
     cmd += " -O \"" + doc_path_html(options, topic_id, doc_index) + "\""
     # TODO add program options for these parameters
     cmd += " -t 1"              # try only once
