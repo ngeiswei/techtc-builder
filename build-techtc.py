@@ -534,8 +534,11 @@ def build_techtc(options):
     
     if not options.P:
 
-        print "Create documents in techtc format for all subtopics"
-        createDocuments(til_union(til), options)
+        if not options.C:
+            print "Create documents in techtc format for all subtopics"
+            createDocuments(til_union(til), options)
+        else:
+            print "Skip creation of documents in techtc format"
 
         print "Organize documents according to the list of pairs of subtopics"
         organizeDocuments(spl, til, options)
@@ -592,6 +595,9 @@ def main():
     parser.add_option("-P", "--only-parse", action="store_true",
                       dest="P",
                       help="Perform only parsing (building of topics and links), do not download web pages, and save the result in the file provided with options -o.")
+    parser.add_option("-C", "--not-create-documents", action="store_true",
+                      dest="C",
+                      help="If the documents have been created but not organized yet (because it takes a lot of disk space) then that option can be used. Normally the recovery and continuation is automatic but with that option the program will not try to create mising intermediate documents therefore they can be deleted to get more space. You need to is specifying the existing output directory with option -O and the dump file with option -i.")
     parser.add_option("-t", "--subtopic-tags", action="append",
                       default=["narrow", "symbolic"],
                       help="Use the following tag prefixes to find subtopics of a given topic.")
