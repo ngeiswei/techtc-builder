@@ -20,7 +20,9 @@ You can specify the prefix where to install with option --prefix, such as
 REQUIREMENTS
 ------------
 
-- Python 2.6 or above
+- Python 2.7 or above
+
+- python-lxml
 
 - dmoz RDF dump files structure.rdf.u8 and content.rdf.u8. Can be
   downloaded at http://www.dmoz.org/rdf.html

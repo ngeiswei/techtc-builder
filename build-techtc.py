@@ -102,7 +102,7 @@ def collectLinksBFS(cat, options):
         s = len(l)
         if s < n:
             cats = sum([csubtopics((options.s, cat,
-                                        tuple(options.subtopic_tags)))
+                                    tuple(options.subtopic_tags)))
                         for cat in cats], [])
         else:
             printLinks(l[:n])
@@ -597,7 +597,7 @@ def main():
                       help="Perform only parsing (building of topics and links), do not download web pages, and save the result in the file provided with options -o.")
     parser.add_option("-C", "--not-create-documents", action="store_true",
                       dest="C",
-                      help="If the documents have been created but not organized yet (because it takes a lot of disk space) then that option can be used. Normally the recovery and continuation is automatic but with that option the program will not try to create mising intermediate documents therefore they can be deleted to get more space. You need to is specifying the existing output directory with option -O and the dump file with option -i.")
+                      help="If the documents have been created but not organized yet (because it takes a lot of disk space) then that option can be used. Normally the recovery and continuation is automatic but with that option the program will not try to create missing intermediate documents therefore they can be deleted to get more space. You need to is specifying the existing output directory with option -O and the dump file with option -i.")
     parser.add_option("-t", "--subtopic-tags", action="append",
                       default=["narrow", "symbolic"],
                       help="Use the following tag prefixes to find subtopics of a given topic.")
