@@ -9,7 +9,7 @@ if [ -z "$1" ]; then
     echo "(filtered and stemmed) and the last column correspond to the result (1"
     echo "if it is the first category, 0 if it is in the second category)"
 
-    echo "Usage: $0 DIRECTORY"
+    echo "Usage: $0 TECHTC_DIR"
     exit 1
 fi
 

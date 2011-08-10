@@ -13,4 +13,4 @@ TECHTC_DIR=$(readlink -f $1) # get the absolute path, no matter what
 
 # remove any Exp* that does not contain both all_pos.txt and
 # all_neg.txt files
-find "${TECHTC_DIR}" -name "Exp_*" | (while read x; do if [ ! -e "$x/all_pos.txt" -o ! -e "$x/all_pos.txt" ]; then rm -fr "$x"; fi; done)
+find "${TECHTC_DIR}" -name "Exp_*" | (while read x; do if [ ! -e "$x/all_pos.txt" -o ! -e "$x/all_neg.txt" ]; then rm -fr "$x"; fi; done)
