@@ -26,4 +26,4 @@ DIRECTORY=$(cd `dirname "$0"` && pwd)
 # the text or not) and the target feature is whether the document
 # belongs to the first category
 echo "Convert all pos and neg text files into data.csv"
-find "${TECHTC_DIR}" -name "Exp_*" -type d -exec "${DIRECTORY}/techtc2CSV.py" {}"/all_pos.txt" {}"/all_neg.txt" "__target__" -o {}"/data.csv" \;
+find "${TECHTC_DIR}" -name "Exp_*" -type d | parallel "${DIRECTORY}/techtc2CSV.py" {}"/all_pos.txt" {}"/all_neg.txt" "__target__" -o {}"/data.csv"
