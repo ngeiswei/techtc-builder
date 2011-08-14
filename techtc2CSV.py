@@ -119,7 +119,7 @@ def convertF2CSV(posFile, negFile, targetVar, outputFileName):
     outputFile.write(targetVar)
     outputFile.write(os.linesep)
     # write alternation of positive and negative (so that truncating
-    # the data will remained unbiased)
+    # the data will remain unbiased)
     for i in range(max(len(plws), len(nlws))):
         if i < len(plws):
             for w in words:
