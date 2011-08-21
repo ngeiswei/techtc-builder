@@ -36,7 +36,9 @@ REQUIREMENTS
 
 * For techtc2CSV_all.sh
 
-- gnu parallel (for techtc2CSV_all.sh)
+- gnu parallel
+
+- PyStemmer
 
 USAGE
 -----
