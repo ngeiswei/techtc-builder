@@ -5,18 +5,6 @@ techtc-builder is a software to build a dataset collection similar to
 the techtc300 http://techtc.cs.technion.ac.il/techtc300/.
 
 
-INSTALLATION
-------------
-
-Run the following script (most likely in super user mode)
-
-# ./install.sh
-
-You can specify the prefix where to install with option --prefix, such as
-
-# ./install --prefix /usr
-
-
 REQUIREMENTS
 ------------
 
@@ -40,6 +28,25 @@ REQUIREMENTS
 
 - PyStemmer
 
+* For CSV_MI_filter.sh
+
+- OpenCog (more specifically feature-selection)
+
+
+INSTALLATION
+------------
+
+** This is not required if you run the scripts from the project root **
+
+Run the following script (most likely in super user mode)
+
+# ./install.sh
+
+You can specify the prefix where to install with option --prefix, such as
+
+# ./install --prefix /usr
+
+
 USAGE
 -----
 
@@ -57,12 +64,12 @@ next step as well as lower memory usage.
 
 3) Create a techtc300
 
-$ build-techtc.py -c content_stripped.rdf.u8 -s structure_stripped.rdf.u8 -S 300
+$ ./build-techtc.py -c content_stripped.rdf.u8 -s structure_stripped.rdf.u8 -S 300
 
 This will create a directory techtc300 with the dataset collection
 inside. In fact the options are the default ones so the following
 
-$ build-techtc.py
+$ ./build-techtc.py
 
 does the same thing.
 
@@ -75,6 +82,43 @@ $ build-techtc.py -H html2text
 here it will use html2text
 (http://www.mbayer.de/html2text/files.shtml) instead of w3m.
 
+4) Remove ill-formed directories (if positive or negative text files
+are missing). Here the directory of the collection is techtc300,
+replace if appropriate
+
+$ ./strip_techtc techtc300
+
+5) -- optional -- convert the text files into feature vectors in CSV
+format. Each row corresponds to a document, and each column
+corresponds to a word (0 if it does not appear in the document, 1
+otherwise). The first row shows the corresponding word. Just run ()
+
+$ ./techtc2CSV.py techtc300
+
+is gonna create data.csv files under each Exp_XXXX_XXXX directory.
+
+Then, if you don't need any more the intermediary text files you can
+run
+
+$ ./strip_csv.sh techtc300
+
+Beware that this is gonna permanently remove everything expect the CSV
+files.
+
+Since the web is full of mess you may end-up with CSV file with
+thousands of words plus lots of gibberish. To filter that out you can
+use a filter that will keep only feature with their mutual information
+with the target above a certain threshold, run
+
+$ ./CSV_MI_filter.sh techtc300 0.05
+
+The script is gonna copy the content under
+
+techtc300_MI_0.05
+
+where 0.05 is the threshold, then rewrite all data.csv files
+filtered. This steps uses feature-selection a tool provided with
+OpenCog project http://wiki.opencog.org/w/Building_OpenCog
 
 AUTHOR
 ------
